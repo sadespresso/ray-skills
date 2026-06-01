@@ -16,12 +16,14 @@ project talks to it over HTTP.
 When in doubt about any field, fetch the OpenAPI rather than guessing.
 
 ## Auth
-Every request sends `Authorization: Bearer $RAY_API_KEY`.
+Every request sends `Authorization: Bearer $RAY_API_KEY` (keys look like `ck_live_…`).
 - `RAY_API_KEY` is a Ray API key (Ray dashboard → workspace → **API keys**). **Read it from
   the environment; never hardcode it.** Sending needs any key; creating/updating templates
   needs a **write**-scoped key.
 - One key = one Ray **workspace** (tenant). Each product is normally its own workspace, with
   its own channel configs, templates, suppression list, and keys.
+- **Preflight:** `GET /me` → `{ tenantId, apiKeyId, scopes }`. Cheap way to confirm the key is
+  valid and (before template work) that `scopes` includes `write` — do this instead of guessing.
 
 ## Send a notification — `POST /send`
 ```
@@ -45,6 +47,9 @@ Quick shape: `channelKind: "email_html"`, `content: { source:"raw", subject, bod
 plus `logTitle`, `logDescription`, and `publish`. The API is **raw HTML only** — visual /
 "designed" (Maily) templates are dashboard-only. Template variables are Mustache `{{var}}`
 and become **required params** at send time.
+- **Verify a render without spamming anyone:** `POST /templates/:id/test-send` delivers to an
+  address you control and is flagged `is_test` (never shows in customer feeds). Prefer it over
+  a real `/send` when checking a migrated template.
 
 ## References
 - `references/api.md` — condensed contract: endpoints, channel kinds, recipient & content
