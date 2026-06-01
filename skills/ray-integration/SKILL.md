@@ -1,0 +1,53 @@
+---
+name: ray-integration
+description: Integrate a project with Ray, the notification/email platform at https://ray-api.gege.mn. Use when sending notifications or emails through Ray, creating or migrating email/notification templates into Ray, or wiring Ray's HTTP API into an app. Covers auth, POST /send, POST /templates, and the live OpenAPI spec.
+---
+
+# Ray integration
+
+Ray is a multi-tenant notification platform (email via SES, push via FCM, Slack). This
+project talks to it over HTTP.
+
+- **Base URL:** `https://ray-api.gege.mn`
+- **Authoritative, always-current contract:** `https://ray-api.gege.mn/openapi.json`
+  (OpenAPI 3.1, generated from the server's own schemas — it can't drift). **Fetch it**
+  whenever you need exact request/response shapes. Human UI: `https://ray-api.gege.mn/docs`.
+
+When in doubt about any field, fetch the OpenAPI rather than guessing.
+
+## Auth
+Every request sends `Authorization: Bearer $RAY_API_KEY`.
+- `RAY_API_KEY` is a Ray API key (Ray dashboard → workspace → **API keys**). **Read it from
+  the environment; never hardcode it.** Sending needs any key; creating/updating templates
+  needs a **write**-scoped key.
+- One key = one Ray **workspace** (tenant). Each product is normally its own workspace, with
+  its own channel configs, templates, suppression list, and keys.
+
+## Send a notification — `POST /send`
+```
+{
+  "channelConfigId": "<uuid of a channel config in the workspace>",
+  "templateId": "<uuid>",
+  "params": { "name": "Ada" },           // fills the template's {{vars}} (all strings)
+  "recipient": { "email": "a@b.com" },   // shape depends on the channel (see references/api.md)
+  "externalUserId": "user_123",          // optional; ties the delivery to a feed user
+  "showInFeed": true                     // optional; surface it in the in-app feed
+}
+```
+- Provide **exactly one** of `recipient` (single delivery) **or**
+  `targets: [{ recipient, externalUserId? }, …]` (fan-out, one delivery/feed row each).
+- Send an `Idempotency-Key: <uuid>` header so retries don't double-send.
+- `notBefore: "<ISO-8601>"` schedules a future send.
+
+## Create / migrate templates — `POST /templates`
+For bulk import from an existing system, follow **`references/migrate-templates.md`**.
+Quick shape: `channelKind: "email_html"`, `content: { source:"raw", subject, bodyHtml, bodyText }`,
+plus `logTitle`, `logDescription`, and `publish`. The API is **raw HTML only** — visual /
+"designed" (Maily) templates are dashboard-only. Template variables are Mustache `{{var}}`
+and become **required params** at send time.
+
+## References
+- `references/api.md` — condensed contract: endpoints, channel kinds, recipient & content
+  shapes, errors, rate limits.
+- `references/migrate-templates.md` — step-by-step migration of existing templates into Ray.
+- Anything else → `https://ray-api.gege.mn/openapi.json`.
