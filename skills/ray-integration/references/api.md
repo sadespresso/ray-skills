@@ -7,6 +7,7 @@ request. **Source of truth:** `GET /openapi.json` (fetch it for exact shapes).
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/me` | Resolve key context → `{ tenantId, apiKeyId, scopes[] }` (preflight / scope check) |
+| GET | `/channels` | List configured channels → `id` (=`channelConfigId`), `kind`, `templateKind`, `recipientSchema` |
 | POST | `/send` | Send a notification (single or fan-out) |
 | GET | `/templates` | List templates (`?folder=`, `?includeArchived=true`) |
 | POST | `/templates` | Create a template (raw only) → `{ id, requiredParams[] }` |
@@ -24,6 +25,22 @@ Public, no API key: `GET /healthz`, `GET /openapi.json`, `GET /docs`,
 `POST /webhooks/{channelType}/{channelConfigId}` (provider callbacks, signature-verified),
 `GET /metrics` (optional `METRICS_AUTH_TOKEN` bearer).
 
+## Discover channels — `GET /channels`
+Returns the channels configured in the workspace so you don't have to hardcode UUIDs or guess
+recipient shapes. Safe metadata only — **never** the encrypted provider credentials.
+```
+{ "channels": [
+  { "id": "<uuid>",          // use as channelConfigId in /send and /templates/:id/test-send
+    "name": "…",
+    "kind": "ses_email",     // channel config kind (ses_email · fcm_push · slack_webhook · …)
+    "templateKind": "email_html",  // the template channelKind this channel accepts
+    "recipientSchema": { … }       // inline JSON Schema for the `recipient` /send expects
+  } ] }
+```
+No params. `recipientSchema` is the authoritative per-channel `recipient` shape (varies by kind —
+e.g. `{ email }` for email, `{ deviceToken | topic }` for push); the static shapes below are a
+quick reference. Match a `templateId` whose kind equals the channel's `templateKind`.
+
 ## Channel kinds (templates)
 `channelKind`: `email_html` · `fcm_basic` · `slack_text` · `markdown` · `text`.
 
@@ -36,7 +53,8 @@ Public, no API key: `GET /healthz`, `GET /openapi.json`, `GET /docs`,
 (Fetch the OpenAPI for the precise per-kind schema.)
 
 ## Recipient shapes (in `/send`)
-Depends on the channel config's kind:
+Authoritative per channel via `GET /channels` → `recipientSchema`. Depends on the channel
+config's kind:
 - **ses_email**: `{ "email": "a@b.com", "name": "Ada" }` (name optional).
 - **fcm_push**: `{ "deviceToken": "…" }` **or** `{ "topic": "…" }` (not both).
 - **slack_webhook**: no per-message recipient (posts to the configured webhook) — pass

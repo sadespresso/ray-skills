@@ -1,6 +1,6 @@
 ---
 name: ray-integration
-description: Integrate a project with Ray, the notification/email platform at https://ray-api.gege.mn. Use when sending notifications or emails through Ray, creating or migrating email/notification templates into Ray, or wiring Ray's HTTP API into an app. Covers auth, POST /send, POST /templates, and the live OpenAPI spec.
+description: Integrate a project with Ray, the notification/email platform at https://ray-api.gege.mn. Use when sending notifications or emails through Ray, creating or migrating email/notification templates into Ray, or wiring Ray's HTTP API into an app. Covers auth, GET /channels, POST /send, POST /templates, and the live OpenAPI spec.
 ---
 
 # Ray integration
@@ -25,10 +25,19 @@ Every request sends `Authorization: Bearer $RAY_API_KEY` (keys look like `ck_liv
 - **Preflight:** `GET /me` → `{ tenantId, apiKeyId, scopes }`. Cheap way to confirm the key is
   valid and (before template work) that `scopes` includes `write` — do this instead of guessing.
 
+## Discover channels — `GET /channels`
+Don't hardcode UUIDs or guess recipient shapes — list what the workspace actually has:
+```
+GET /channels → { channels: [{ id, name, kind, templateKind, recipientSchema }] }
+```
+Use a channel's `id` as `channelConfigId` below; `recipientSchema` is the exact `recipient`
+object that channel expects; pick a `templateId` whose kind matches `templateKind`. Returns
+safe metadata only — never provider credentials.
+
 ## Send a notification — `POST /send`
 ```
 {
-  "channelConfigId": "<uuid of a channel config in the workspace>",
+  "channelConfigId": "<a channel id from GET /channels>",
   "templateId": "<uuid>",
   "params": { "name": "Ada" },           // fills the template's {{vars}} (all strings)
   "recipient": { "email": "a@b.com" },   // shape depends on the channel (see references/api.md)
