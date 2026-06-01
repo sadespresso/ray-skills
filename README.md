@@ -12,7 +12,13 @@ or migrate existing templates into it — using the live API docs as the source 
 
 ## Install
 
-A Claude Code skill is just a directory containing `SKILL.md`. Pick one:
+**Quick install** — with the [`skills`](https://github.com/vercel-labs/skills) CLI:
+```bash
+pnpx skills add sadespresso/ray-skills          # detects + installs ray-integration
+pnpx skills add sadespresso/ray-skills -g       # -g installs it globally (all projects)
+```
+
+A skill is just a directory containing `SKILL.md`, so you can also wire it up by hand. Pick one:
 
 **Per project** — make it available in one repo:
 ```bash
