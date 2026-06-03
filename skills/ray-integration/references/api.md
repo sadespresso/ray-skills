@@ -64,8 +64,11 @@ config's kind:
 ```
 {
   "channelConfigId": "<uuid>",     // which configured channel to send through
-  "templateId": "<uuid>",          // a published template of a compatible kind
-  "params": { "<var>": "<string>" },// fills {{vars}}; all values are strings
+  "templateId": "<uuid>",          // template send — XOR `content`; a published template of a compatible kind
+  "content": { ... },              // inline send — XOR `templateId`; channel-shaped, raw (see below)
+  "params": { "<var>": "<string>" },// fills {{vars}} in the template OR the inline content; all strings
+  "logTitle": "…",                 // inline send only; feed entry title (≤500)
+  "logDescription": "…",           // inline send only; feed entry description (≤2000)
   "recipient": { ... },            // XOR targets
   "targets": [{ "recipient": {...}, "externalUserId": "u1" }],  // XOR recipient, fan-out
   "externalUserId": "user_123",    // optional
@@ -73,6 +76,13 @@ config's kind:
   "notBefore": "2026-01-01T00:00:00Z"  // optional, schedule (ISO-8601, must end in Z)
 }
 ```
+**Content source — exactly one of `templateId` or `content`.** Inline `content` uses the same
+per-kind shape as a template's `content` (e.g. email_html `{ subject, bodyHtml, bodyText }`) and
+is **raw only** — designed/Maily content is dashboard-only, same as `POST /templates`. Its
+`{{vars}}` must all be covered by `params`. `logTitle` / `logDescription` are accepted **only**
+with inline `content` (template sends carry these on the template version); they default to empty
+strings. Inline sends are not linked to a template (their feed/log rows have a null `templateId`).
+
 `targets` holds 1–1000 entries. Returns **202** `{ sendId }` (one `sendId` even for fan-out;
 poll `GET /sends/:id` for status). Header `Idempotency-Key: <uuid>` (recommended) — result is
 cached **24h**; replaying with the *same* body returns the original result, a *different* body

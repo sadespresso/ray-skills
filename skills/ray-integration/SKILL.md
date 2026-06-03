@@ -38,14 +38,20 @@ safe metadata only — never provider credentials.
 ```
 {
   "channelConfigId": "<a channel id from GET /channels>",
-  "templateId": "<uuid>",
-  "params": { "name": "Ada" },           // fills the template's {{vars}} (all strings)
+  "templateId": "<uuid>",                // template send — XOR `content`
+  "params": { "name": "Ada" },           // fills {{vars}} (all strings)
   "recipient": { "email": "a@b.com" },   // shape depends on the channel (see references/api.md)
   "externalUserId": "user_123",          // optional; ties the delivery to a feed user
   "showInFeed": true                     // optional; surface it in the in-app feed
 }
 ```
-- Provide **exactly one** of `recipient` (single delivery) **or**
+- **Content source — provide exactly one:**
+  - `templateId` (+ `params`) — render a published template.
+  - `content` — inline, channel-shaped content (e.g. email `{ subject, bodyHtml, bodyText }`),
+    no template needed. `params` still fill its `{{vars}}`; add optional `logTitle` /
+    `logDescription` for the in-app feed entry. **Raw only** — designed/Maily content stays
+    dashboard-only, same as `POST /templates`.
+- **Delivery — provide exactly one:** `recipient` (single) **or**
   `targets: [{ recipient, externalUserId? }, …]` (fan-out, one delivery/feed row each).
 - Send an `Idempotency-Key: <uuid>` header so retries don't double-send.
 - `notBefore: "<ISO-8601>"` schedules a future send.
