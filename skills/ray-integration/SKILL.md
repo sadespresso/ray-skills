@@ -5,7 +5,8 @@ description: Integrate a project with Ray, the notification/email platform at ht
 
 # Ray integration
 
-Ray is a multi-tenant notification platform (email via SES, push via FCM, Slack). This
+Ray is a multi-tenant notification platform — email (Amazon SES or raw SMTP), push (FCM),
+Slack, Discord, Telegram, and generic signed webhooks, all behind one HTTP API. This
 project talks to it over HTTP.
 
 - **Base URL:** `https://ray-api.gege.mn`
@@ -55,6 +56,15 @@ safe metadata only — never provider credentials.
   `targets: [{ recipient, externalUserId? }, …]` (fan-out, one delivery/feed row each).
 - Send an `Idempotency-Key: <uuid>` header so retries don't double-send.
 - `notBefore: "<ISO-8601>"` schedules a future send.
+
+**Ray is a stateless relay — it keeps no recipient registry.** You pass the channel-shaped
+recipient on every send (an email, an FCM `deviceToken`/`topic`, a Telegram `chatId`, …) and
+own the user → contact-info mapping in *your* system. There is no "register device /
+subscriber" step and no "send to user U" call — same as you'd pass an email address rather
+than pre-registering it. `externalUserId` only labels the delivery for the in-app feed; it
+never decides who actually receives the message. (Migrating from OneSignal/Firebase/Knock,
+which hold the device registry for you? This is the inverted model — supply the token each
+send, or use an FCM `topic` for multi-device fan-out.)
 
 ## Create / migrate templates — `POST /templates`
 For bulk import from an existing system, follow **`references/migrate-templates.md`**.

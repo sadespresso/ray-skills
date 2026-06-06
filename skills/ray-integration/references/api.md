@@ -32,7 +32,7 @@ recipient shapes. Safe metadata only — **never** the encrypted provider creden
 { "channels": [
   { "id": "<uuid>",          // use as channelConfigId in /send and /templates/:id/test-send
     "name": "…",
-    "kind": "ses_email",     // channel config kind (ses_email · fcm_push · slack_webhook · …)
+    "kind": "ses_email",     // config kind: ses_email · smtp_email · fcm_push · slack_webhook · discord_webhook · telegram_bot · generic_webhook
     "templateKind": "email_html",  // the template channelKind this channel accepts
     "recipientSchema": { … }       // inline JSON Schema for the `recipient` /send expects
   } ] }
@@ -42,23 +42,36 @@ e.g. `{ email }` for email, `{ deviceToken | topic }` for push); the static shap
 quick reference. Match a `templateId` whose kind equals the channel's `templateKind`.
 
 ## Channel kinds (templates)
-`channelKind`: `email_html` · `fcm_basic` · `slack_text` · `markdown` · `text`.
+`channelKind`: `email_html` · `fcm_basic` · `slack_text` · `discord_text` · `telegram_text` ·
+`webhook_json` · `markdown` · `text`.
 
 `content` by kind:
 - **email_html**: `{ source:"raw", subject (1–998), bodyHtml, bodyText }` — `bodyText` is the
-  required plain-text fallback.
-- **fcm_basic**: `{ title, body, imageUrl? }`.
+  required plain-text fallback. Shared by both SES and SMTP email channels.
+- **fcm_basic**: `{ title, body, imageUrl?, data? }` — `data` is a string→string map delivered
+  verbatim to your client SDK.
 - **slack_text**: `{ text }`.
+- **discord_text**: `{ content }` (≤2000 chars; Discord markdown; `@`-mentions disabled at send).
+- **telegram_text**: `{ text, disableLinkPreview? }` (≤4096 chars; Telegram-HTML subset only:
+  `<b> <i> <u> <s> <a href> <code> <pre>` — variable values are HTML-escaped).
+- **webhook_json**: `{ title, body, data? }` — delivered as a `{ id, title, body, data, sentAt }`
+  JSON envelope, HMAC-SHA256 signed (`X-Ray-Signature: sha256=<hex>`).
 
 (Fetch the OpenAPI for the precise per-kind schema.)
 
 ## Recipient shapes (in `/send`)
 Authoritative per channel via `GET /channels` → `recipientSchema`. Depends on the channel
-config's kind:
-- **ses_email**: `{ "email": "a@b.com", "name": "Ada" }` (name optional).
-- **fcm_push**: `{ "deviceToken": "…" }` **or** `{ "topic": "…" }` (not both).
-- **slack_webhook**: no per-message recipient (posts to the configured webhook) — pass
-  `recipient: {}` / omit per the OpenAPI.
+config's kind. **Ray stores no recipient registry** — you supply these on every send and keep
+the user → contact-info mapping yourself (see "pass-through recipients" in `SKILL.md`).
+- **ses_email** / **smtp_email**: `{ "email": "a@b.com", "name": "Ada" }` (name optional; SES
+  also accepts `cc` / `bcc` / `attachments` — see the OpenAPI).
+- **fcm_push**: `{ "deviceToken": "…" }` **or** `{ "topic": "…" }` (exactly one). No device
+  registry on Ray's side — pass the token (from your client SDK) each send, or a `topic` for
+  multi-device fan-out.
+- **slack_webhook** / **discord_webhook** / **generic_webhook**: no per-message recipient (the
+  configured URL targets the destination) — pass `recipient: {}` / omit per the OpenAPI.
+- **telegram_bot**: `{ "chatId": "…" }` — numeric chat/user id as a string, or
+  `@channelusername`. The bot must already be a member of the target chat/channel.
 
 ## `POST /send` body
 ```
