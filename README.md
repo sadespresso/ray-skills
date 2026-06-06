@@ -9,6 +9,7 @@ or migrate existing templates into it — using the live API docs as the source 
 | Skill | Use it for |
 |---|---|
 | `ray-integration` | Sending notifications/emails via Ray, and creating/migrating email templates into Ray. |
+| `ray-email-design` | Designing consistent, on-brand email templates (one frozen HTML shell, reused) and saving them to Ray. |
 
 ## Install
 
@@ -57,6 +58,11 @@ skills/ray-integration/
   references/
     api.md                      # condensed endpoint/auth/contract reference
     migrate-templates.md         # step-by-step template migration playbook
+skills/ray-email-design/
+  SKILL.md                      # entry point: brand setup → generate → verify → publish
+  references/
+    email-html-rules.md         # bulletproof email-HTML standard + frozen-shell anatomy
+    save-to-ray.md              # slim template write/upsert/test-send/publish contract
 ```
 
 Add more skills under `skills/<name>/SKILL.md` as Ray grows.
