@@ -56,6 +56,8 @@ safe metadata only — never provider credentials.
   `targets: [{ recipient, externalUserId? }, …]` (fan-out, one delivery/feed row each).
 - Send an `Idempotency-Key: <uuid>` header so retries don't double-send.
 - `notBefore: "<ISO-8601>"` schedules a future send.
+- `priority: "high" | "low"` (default `"high"`). Mark marketing/bulk sends `"low"` so they
+  yield to transactional mail — see **Bulk & marketing** below.
 
 **Ray is a stateless relay — it keeps no recipient registry.** You pass the channel-shaped
 recipient on every send (an email, an FCM `deviceToken`/`topic`, a Telegram `chatId`, …) and
@@ -65,6 +67,22 @@ than pre-registering it. `externalUserId` only labels the delivery for the in-ap
 never decides who actually receives the message. (Migrating from OneSignal/Firebase/Knock,
 which hold the device registry for you? This is the inverted model — supply the token each
 send, or use an FCM `topic` for multi-device fan-out.)
+
+### Bulk & marketing
+Ray has no audience/segment/subscriber store — your system owns the contact list, segmentation,
+unsubscribe links, and consent. To send a campaign you build the recipient list yourself and call
+`POST /send`. Two things to get right:
+- **Personalization (`Hello {{name}}`):** a `targets[]` fan-out renders the body **once** and
+  reuses it for everyone — the only per-recipient fields are `recipient` and `externalUserId`, so
+  it can't personalize the body. For per-recipient content, send **one `/send` per recipient**
+  (`recipient` + that person's `params`, or pre-rendered inline `content`). Reserve `targets[]`
+  for identical-body blasts. Either way Ray queues the sends and paces them to the channel's
+  provider rate limit — you don't throttle client-side.
+- **Don't starve transactional mail:** mark every marketing/bulk send `"priority": "low"` so a
+  magic-link or receipt sent mid-campaign jumps ahead instead of waiting behind the blast. For
+  full isolation, send marketing through a **separate channel config** (its own provider
+  credential → its own independent rate bucket, so the blast can't consume the transactional
+  send rate either).
 
 ## Create / migrate templates — `POST /templates`
 For bulk import from an existing system, follow **`references/migrate-templates.md`**.

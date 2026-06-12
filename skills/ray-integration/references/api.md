@@ -86,7 +86,8 @@ the user → contact-info mapping yourself (see "pass-through recipients" in `SK
   "targets": [{ "recipient": {...}, "externalUserId": "u1" }],  // XOR recipient, fan-out
   "externalUserId": "user_123",    // optional
   "showInFeed": false,             // optional (default false)
-  "notBefore": "2026-01-01T00:00:00Z"  // optional, schedule (ISO-8601, must end in Z)
+  "notBefore": "2026-01-01T00:00:00Z", // optional, schedule (ISO-8601, must end in Z)
+  "priority": "high"               // optional, "high" (default) | "low"; "low" for marketing/bulk
 }
 ```
 **Content source — exactly one of `templateId` or `content`.** Inline `content` uses the same
@@ -96,10 +97,16 @@ is **raw only** — designed/Maily content is dashboard-only, same as `POST /tem
 with inline `content` (template sends carry these on the template version); they default to empty
 strings. Inline sends are not linked to a template (their feed/log rows have a null `templateId`).
 
-`targets` holds 1–1000 entries. Returns **202** `{ sendId }` (one `sendId` even for fan-out;
-poll `GET /sends/:id` for status). Header `Idempotency-Key: <uuid>` (recommended) — result is
-cached **24h**; replaying with the *same* body returns the original result, a *different* body
-→ **409**.
+`targets` holds 1–1000 entries and renders the body **once** for all of them (only `recipient` +
+`externalUserId` vary per target) — so it can't personalize per recipient; for `Hello {{name}}`
+send one `/send` per recipient instead. Returns **202** `{ sendId }` (one `sendId` even for
+fan-out; poll `GET /sends/:id` for status). Header `Idempotency-Key: <uuid>` (recommended) —
+result is cached **24h**; replaying with the *same* body returns the original result, a
+*different* body → **409**.
+
+`priority` (`"high"` default, `"low"`) sets dispatch order on the shared queue — `low` marketing
+bulk yields to `high` transactional mail so a campaign can't delay a magic-link email. It changes
+fetch order, not rate; for rate isolation too, send marketing through a separate channel config.
 
 ## `POST /templates/:id/test-send` body
 ```
