@@ -58,6 +58,9 @@ safe metadata only — never provider credentials.
 - `notBefore: "<ISO-8601>"` schedules a future send.
 - `priority: "high" | "low"` (default `"high"`). Mark marketing/bulk sends `"low"` so they
   yield to transactional mail — see **Bulk & marketing** below.
+- `trackClicks: true` (email only, default `false`) rewrites HTML body links so clicks are
+  counted; pass an optional `campaignId` to group them. Read counts via `GET /clicks` — see
+  **Click tracking** below.
 
 **Ray is a stateless relay — it keeps no recipient registry.** You pass the channel-shaped
 recipient on every send (an email, an FCM `deviceToken`/`topic`, a Telegram `chatId`, …) and
@@ -83,6 +86,17 @@ unsubscribe links, and consent. To send a campaign you build the recipient list 
   full isolation, send marketing through a **separate channel config** (its own provider
   credential → its own independent rate bucket, so the blast can't consume the transactional
   send rate either).
+
+### Click tracking
+Set `trackClicks: true` on an email send and Ray rewrites every absolute `<a href="http(s)…">` in
+the HTML body to a signed redirect (`/c/<token>`) that records the click and 302s to the original
+URL — transport-agnostic (SES + SMTP), since the rewrite happens at send time. Opt-in per send.
+- Only the HTML body is rewritten (not plain text); `mailto:`/`tel:`/anchors are left alone, and an
+  `<a data-ray-no-track>` opts a link out (e.g. unsubscribe/legal links).
+- Pass a `campaignId` to aggregate clicks across many sends (e.g. one `/send` per recipient in a
+  campaign), then read **`GET /clicks?campaignId=…`** (or `?sendId=…`) → `{ totalClicks, byUrl: [{ url, clicks }] }`
+  with the same key you send with.
+- Counts include bot/scanner pre-fetches and are total, not unique — a trend signal, not exact.
 
 ## Create / migrate templates — `POST /templates`
 For bulk import from an existing system, follow **`references/migrate-templates.md`**.

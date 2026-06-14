@@ -18,11 +18,13 @@ request. **Source of truth:** `GET /openapi.json` (fetch it for exact shapes).
 | POST | `/templates/:id/archive` | Archive a template |
 | GET | `/sends/:id` | Per-send status detail |
 | GET | `/notifications` | Customer feed for one end user (`externalUserId` **required**) |
+| GET | `/clicks` | Email link click stats (`?sendId=` or `?campaignId=`, ≥1 required) → `{ totalClicks, byUrl[] }` |
 | GET·POST | `/tenant-webhooks` | List / create delivery-status webhooks (create returns the signing secret **once**) |
 | GET·PATCH·DELETE | `/tenant-webhooks/:id` | Get / update (`rotateSecret` to roll) / archive a webhook |
 
 Public, no API key: `GET /healthz`, `GET /openapi.json`, `GET /docs`,
 `POST /webhooks/{channelType}/{channelConfigId}` (provider callbacks, signature-verified),
+`GET /c/{token}` (signed click-tracking redirect — recipients follow wrapped email links),
 `GET /metrics` (optional `METRICS_AUTH_TOKEN` bearer).
 
 ## Discover channels — `GET /channels`
@@ -87,7 +89,9 @@ the user → contact-info mapping yourself (see "pass-through recipients" in `SK
   "externalUserId": "user_123",    // optional
   "showInFeed": false,             // optional (default false)
   "notBefore": "2026-01-01T00:00:00Z", // optional, schedule (ISO-8601, must end in Z)
-  "priority": "high"               // optional, "high" (default) | "low"; "low" for marketing/bulk
+  "priority": "high",              // optional, "high" (default) | "low"; "low" for marketing/bulk
+  "trackClicks": false,            // optional, email only (default false); rewrite body links for click tracking
+  "campaignId": "spring-sale"      // optional; groups click stats across sends (read via GET /clicks)
 }
 ```
 **Content source — exactly one of `templateId` or `content`.** Inline `content` uses the same
@@ -107,6 +111,14 @@ result is cached **24h**; replaying with the *same* body returns the original re
 `priority` (`"high"` default, `"low"`) sets dispatch order on the shared queue — `low` marketing
 bulk yields to `high` transactional mail so a campaign can't delay a magic-link email. It changes
 fetch order, not rate; for rate isolation too, send marketing through a separate channel config.
+
+`trackClicks` (email only, default `false`) rewrites every absolute `<a href="http(s)…">` in the
+HTML body to a signed Ray redirect (`/c/{token}`) that records the click and 302s to the original
+URL — works on SES and SMTP alike. Only the HTML body is rewritten (not plain text); `mailto:`/`tel:`/
+anchors are skipped, and an `<a data-ray-no-track>` opts a link out (e.g. unsubscribe). Pass a
+`campaignId` to group clicks across sends, then read counts via `GET /clicks?campaignId=…` (or
+`?sendId=…`) → `{ totalClicks, byUrl: [{ url, clicks }] }`, same API key as `/send`. Counts include
+bot/scanner clicks and are total (not unique) — a trend signal, not exact.
 
 ## `POST /templates/:id/test-send` body
 ```
