@@ -81,7 +81,7 @@ the user → contact-info mapping yourself (see "pass-through recipients" in `SK
   "channelConfigId": "<uuid>",     // which configured channel to send through
   "templateId": "<uuid>",          // template send — XOR `content`; a published template of a compatible kind
   "content": { ... },              // inline send — XOR `templateId`; channel-shaped, raw (see below)
-  "params": { "<var>": "<string>" },// fills {{vars}} in the template OR the inline content; all strings
+  "params": { "<var>": <any JSON> },// fills {{vars}} in the template OR inline content; arbitrary JSON (strings, numbers, bools, null, arrays, nested objects)
   "logTitle": "…",                 // inline send only; feed entry title (≤500)
   "logDescription": "…",           // inline send only; feed entry description (≤2000)
   "recipient": { ... },            // XOR targets
@@ -122,7 +122,7 @@ bot/scanner clicks and are total (not unique) — a trend signal, not exact.
 
 ## `POST /templates/:id/test-send` body
 ```
-{ "channelConfigId": "<uuid>", "recipient": { ... }, "params": { "<var>": "<string>" } }
+{ "channelConfigId": "<uuid>", "recipient": { ... }, "params": { "<var>": <any JSON> } }
 ```
 Returns **202** `{ sendId }`. The safe way to preview how a template renders: these rows are
 `is_test` and never surface in `GET /notifications` or any customer feed. `channelConfigId` and
@@ -147,8 +147,17 @@ per-kind shapes above). POST returns **201** `{ id, requiredParams }`; the respo
 `requiredParams` is the authoritative list of detected `{{vars}}`.
 
 ## Conventions
-- **Variables**: Mustache `{{var}}` anywhere in subject/body/logTitle/logDescription become
-  required send params (auto-detected). `paramOverrides[name].optional = true` to relax one.
+- **Variables (Mustache subset)**: raw templates render with a Mustache-subset engine and `params`
+  takes **arbitrary JSON** (strings, numbers, bools, null, arrays, nested objects) — plain strings
+  still work unchanged. Scalar interpolation `{{var}}` / dotted `{{a.b}}` / current-item `{{.}}` is
+  **escaped per channel** (HTML/Slack/Discord), XSS-safe. Sections `{{#x}}…{{/x}}` iterate an array
+  / render once for a truthy value / nothing when falsy (`false`/`null`/`""`/`[]`/absent); inverted
+  `{{^x}}…{{/x}}` renders only when falsy/empty. `requiredParams` is **section-aware** — only
+  top-level interpolations are required; section names and section-interior vars are not listed.
+  `paramOverrides[name].optional = true` relaxes a top-level one. **Not supported:** unescaped
+  `{{{x}}}` / `{{& x}}` (treated as literal text — no raw HTML from senders), partials, helper
+  functions; an unbalanced section is rejected with 400 at create/publish; visual/"designed"
+  (Maily) templates stay flat-vars only.
 - **Names** are unique per workspace; re-creating errors → GET then PATCH for idempotent imports.
 - **`GET /notifications`** is the end-user feed, not an admin log: `externalUserId` is required and
   only `show_in_feed=true`, non-test rows show. Cursor-paginated (`cursor`, `limit` ≤200,

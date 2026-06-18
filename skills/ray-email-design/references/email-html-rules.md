@@ -30,11 +30,15 @@ matter — while every template in the set shares byte-identical chrome.
    sufficient contrast, semantic headings in the body.
 10. **No JS, no external stylesheets, no forms.** They're stripped or flagged as spam.
 
-## Variables (Ray's `substitute()`)
+## Variables (Ray's renderer)
 
-- Only `{{name}}`, `name` matching `^[a-zA-Z_][a-zA-Z0-9_]*$`. **No** `{{a.b}}`, no
-  `{{x,fallback=y}}`, no logic.
-- Every `{{var}}` that survives into `subject`/`bodyHtml`/`bodyText` is a **required** send param.
+- Ray's raw renderer is a Mustache subset (sections/inverted/dotted paths, arbitrary-JSON
+  `params` — see the `ray-integration` skill). **This design skill deliberately stays flat:** use
+  only `{{name}}` matching `^[a-zA-Z_][a-zA-Z0-9_]*$` for consistent transactional emails — no
+  `{{a.b}}`, no `{{x,fallback=y}}`, no sections/loops here. (Use `ray-integration` if a template
+  truly needs them.)
+- Every top-level `{{var}}` that survives into `subject`/`bodyHtml`/`bodyText` is a **required**
+  send param.
 - **Constants vs variables:** bake brand chrome (logo, colours, company name, footer legal,
   address) as **literals** in the shell so they're _not_ params. Keep only genuinely
   per-recipient values as `{{vars}}` — default just `{{unsubscribe_url}}`. The body adds its own

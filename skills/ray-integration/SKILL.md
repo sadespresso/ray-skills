@@ -40,7 +40,7 @@ safe metadata only — never provider credentials.
 {
   "channelConfigId": "<a channel id from GET /channels>",
   "templateId": "<uuid>",                // template send — XOR `content`
-  "params": { "name": "Ada" },           // fills {{vars}} (all strings)
+  "params": { "name": "Ada" },           // fills {{vars}}; arbitrary JSON (see Template params below)
   "recipient": { "email": "a@b.com" },   // shape depends on the channel (see references/api.md)
   "externalUserId": "user_123",          // optional; ties the delivery to a feed user
   "showInFeed": true                     // optional; surface it in the in-app feed
@@ -102,11 +102,35 @@ URL — transport-agnostic (SES + SMTP), since the rewrite happens at send time.
 For bulk import from an existing system, follow **`references/migrate-templates.md`**.
 Quick shape: `channelKind: "email_html"`, `content: { source:"raw", subject, bodyHtml, bodyText }`,
 plus `logTitle`, `logDescription`, and `publish`. The API is **raw HTML only** — visual /
-"designed" (Maily) templates are dashboard-only. Template variables are Mustache `{{var}}`
-and become **required params** at send time.
+"designed" (Maily) templates are dashboard-only. Template variables use the Mustache subset
+below; top-level `{{var}}` interpolations become **required params** at send time.
 - **Verify a render without spamming anyone:** `POST /templates/:id/test-send` delivers to an
   address you control and is flagged `is_test` (never shows in customer feeds). Prefer it over
   a real `/send` when checking a migrated template.
+
+### Template params & syntax (Mustache subset)
+Raw-HTML templates render with a **Mustache-subset** engine, and `params` accepts **arbitrary
+JSON** (strings, numbers, booleans, `null`, arrays, nested objects) — not just strings. **Plain
+strings still work unchanged**, so existing flat `{{var}}` templates need no migration.
+- `{{var}}` / `{{a.b}}` / `{{.}}` — escaped scalar interpolation (per-channel escaping, XSS-safe);
+  dotted paths and the current item.
+- `{{#x}}…{{/x}}` — **section**: iterates an array (once per element), renders once for a truthy
+  object/scalar, or nothing when falsy (`false`/`null`/`""`/`[]`/absent).
+- `{{^x}}…{{/x}}` — **inverted section**: renders only when the value is falsy/empty.
+- `required_params` is **section-aware**: only top-level interpolations are required; section names
+  and variables used inside a section are not listed.
+
+Example — a digest with one card per league:
+```
+{{#boards}}<div class="card"><b>{{name}}</b> · {{count}}{{#questions}}<p>{{text}}</p>{{/questions}}</div>{{/boards}}{{^boards}}<p>Nothing pending 🎉</p>{{/boards}}
+```
+```json
+{ "params": { "boards": [ { "name": "Asian League", "count": 1, "questions": [ { "text": "Who tops the group?" } ] } ] } }
+```
+Caveats: unescaped output `{{{x}}}` / `{{& x}}` is **not supported** (treated as literal text — no
+raw HTML from senders); **partials and helper functions are unsupported**; an unbalanced section
+(unclosed/mismatched `{{#x}}…{{/x}}`) is **rejected with 400 at create/publish**; and visual /
+"designed" (Maily) templates stay **flat-vars only** — sections are a raw-HTML capability.
 
 ## References
 - `references/api.md` — condensed contract: endpoints, channel kinds, recipient & content

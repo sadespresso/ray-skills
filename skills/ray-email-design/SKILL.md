@@ -14,9 +14,13 @@ template's body is injected into — so the chrome is byte-identical across the 
 - The API is **raw HTML only** (`channelKind:"email_html"`, `content.source:"raw"`, with
   `subject` / `bodyHtml` / `bodyText`). The visual/Maily editor is dashboard-only — this skill
   emits its own email-safe HTML.
-- Variables are strict Mustache: `{{name}}` matching `^[a-zA-Z_][a-zA-Z0-9_]*$` — **no dots**
-  (`{{user.name}}` is invalid), no fallbacks (`{{x,fallback=y}}`), no conditionals/loops.
-- **Every `{{var}}` in the final `bodyHtml`/`bodyText`/`subject` becomes a _required_ send
+- Variables are Mustache. The raw renderer now supports the Mustache subset (sections
+  `{{#x}}…{{/x}}`, inverted `{{^x}}…{{/x}}`, dotted `{{a.b}}`, current-item `{{.}}`; `params`
+  takes arbitrary JSON) — but this skill deliberately keeps templates **flat, simple `{{name}}`
+  vars** matching `^[a-zA-Z_][a-zA-Z0-9_]*$` for consistent, predictable transactional emails. No
+  fallbacks (`{{x,fallback=y}}`), no helpers/partials, and unescaped `{{{x}}}` is not supported. Reach
+  for sections/loops only via `ray-integration` when a template genuinely needs them (e.g. a digest).
+- **Every top-level `{{var}}` in the final `bodyHtml`/`bodyText`/`subject` becomes a _required_ send
   parameter.** Keep the variable surface small and deliberate (see "Constants vs variables").
 
 **Auth, channels, and the full API:** this skill restates only the template endpoints it needs
