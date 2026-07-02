@@ -43,17 +43,30 @@ safe metadata only — never provider credentials.
   "params": { "name": "Ada" },           // fills {{vars}}; arbitrary JSON (see Template params below)
   "recipient": { "email": "a@b.com" },   // shape depends on the channel (see references/api.md)
   "externalUserId": "user_123",          // optional; ties the delivery to a feed user
-  "showInFeed": true                     // optional; surface it in the in-app feed
+  "feed": { "title": "…", "description": "…" }  // optional; creates one in-app feed entry
 }
 ```
-- **Content source — provide exactly one:**
+- **Content source — provide exactly one (per delivery, if using `deliveries[]`):**
   - `templateId` (+ `params`) — render a published template.
   - `content` — inline, channel-shaped content (e.g. email `{ subject, bodyHtml, bodyText }`),
     no template needed. `params` still fill its `{{vars}}`; add optional `logTitle` /
     `logDescription` for the in-app feed entry. **Raw only** — designed/Maily content stays
     dashboard-only, same as `POST /templates`.
-- **Delivery — provide exactly one:** `recipient` (single) **or**
-  `targets: [{ recipient, externalUserId? }, …]` (fan-out, one delivery/feed row each).
+- **Delivery — three mutually exclusive modes:**
+  - `recipient` (single) — one channel, one recipient.
+  - `targets: [{ recipient, externalUserId? }, …]` (fan-out, 1–1000, one delivery/feed row
+    each) — the body renders **once** and is reused for every target.
+  - `deliveries: [{ channelConfigId, templateId | content, recipient, params? }, …]`
+    (multi-channel, 1–10) — the *same* logical notification over several channels (push +
+    email + SMS, say) for **one** recipient, identified by a top-level `externalUserId`. All
+    deliveries share one `sendId`; `feed` creates at most one feed entry regardless of how many
+    channels fired. Not cross-producted with `targets[]` — loop over recipients yourself for
+    bulk multi-channel.
+- **Feed-only sends:** omit `deliveries`/`recipient`/`targets` entirely and pass `feed` (its
+  `title` is then required) + `externalUserId` — a pure in-app notification, zero channel
+  dispatches, `send.completed` fires immediately.
+- `showInFeed: true` still works as a legacy alias for `feed` (creates a feed entry using the
+  delivery's rendered `logTitle`/`logDescription`) — prefer `feed` in new integrations.
 - Send an `Idempotency-Key: <uuid>` header so retries don't double-send.
 - `notBefore: "<ISO-8601>"` schedules a future send.
 - `priority: "high" | "low"` (default `"high"`). Mark marketing/bulk sends `"low"` so they
@@ -61,6 +74,23 @@ safe metadata only — never provider credentials.
 - `trackClicks: true` (email only, default `false`) rewrites HTML body links so clicks are
   counted; pass an optional `campaignId` to group them. Read counts via `GET /clicks` — see
   **Click tracking** below.
+
+### Multi-channel & feed-only
+```
+{
+  "externalUserId": "u_42",
+  "feed": { "title": "New feature is live!", "description": "Check out dark mode in settings." },
+  "deliveries": [
+    { "channelConfigId": "…push…",  "templateId": "…", "recipient": { "deviceToken": "…" } },
+    { "channelConfigId": "…email…", "templateId": "…", "recipient": { "email": "a@example.com" } }
+  ]
+}
+```
+Drop `deliveries` (keep `feed` + `externalUserId`) for feed-only. Feed entries are **decoupled
+from delivery**: created at accept time (or `notBefore` for scheduled sends), and stay visible
+even if every channel in the send fails or is suppressed — one entry per `(send, externalUserId)`
+no matter how many channels fanned out. Test sends never create one. See `GET /notifications`
+in `references/api.md`.
 
 **Ray is a stateless relay — it keeps no recipient registry.** You pass the channel-shaped
 recipient on every send (an email, an FCM `deviceToken`/`topic`, a Telegram `chatId`, …) and

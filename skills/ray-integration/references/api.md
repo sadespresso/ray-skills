@@ -8,7 +8,7 @@ request. **Source of truth:** `GET /openapi.json` (fetch it for exact shapes).
 |---|---|---|
 | GET | `/me` | Resolve key context → `{ tenantId, apiKeyId, scopes[] }` (preflight / scope check) |
 | GET | `/channels` | List configured channels → `id` (=`channelConfigId`), `kind`, `templateKind`, `recipientSchema` |
-| POST | `/send` | Send a notification (single or fan-out) |
+| POST | `/send` | Send a notification (single, fan-out, multi-channel, or feed-only) |
 | GET | `/templates` | List templates (`?folder=`, `?includeArchived=true`) |
 | POST | `/templates` | Create a template (raw only) → `{ id, requiredParams[] }` |
 | GET | `/templates/:id` | Get a template (`published` + `draft` versions) |
@@ -78,35 +78,54 @@ the user → contact-info mapping yourself (see "pass-through recipients" in `SK
 ## `POST /send` body
 ```
 {
-  "channelConfigId": "<uuid>",     // which configured channel to send through
+  "channelConfigId": "<uuid>",     // legacy/single mode: which configured channel to send through
   "templateId": "<uuid>",          // template send — XOR `content`; a published template of a compatible kind
   "content": { ... },              // inline send — XOR `templateId`; channel-shaped, raw (see below)
   "params": { "<var>": <any JSON> },// fills {{vars}} in the template OR inline content; arbitrary JSON (strings, numbers, bools, null, arrays, nested objects)
   "logTitle": "…",                 // inline send only; feed entry title (≤500)
   "logDescription": "…",           // inline send only; feed entry description (≤2000)
-  "recipient": { ... },            // XOR targets
-  "targets": [{ "recipient": {...}, "externalUserId": "u1" }],  // XOR recipient, fan-out
-  "externalUserId": "user_123",    // optional
-  "showInFeed": false,             // optional (default false)
+  "recipient": { ... },            // legacy/single mode; XOR targets, XOR deliveries
+  "targets": [{ "recipient": {...}, "externalUserId": "u1" }],  // fan-out mode, 1–1000; XOR recipient, XOR deliveries
+  "deliveries": [                  // multi-channel mode, 1–10; XOR recipient/targets
+    { "channelConfigId": "…", "templateId": "…" /* | content */, "recipient": {...}, "params": {...} }
+  ],
+  "externalUserId": "user_123",    // required for feed-only sends; single-recipient label otherwise
+  "feed": { "title": "…", "description": "…" },  // optional; creates ≤1 feed entry regardless of channel fan-out
+  "showInFeed": false,             // optional (default false); legacy alias for `feed`
   "notBefore": "2026-01-01T00:00:00Z", // optional, schedule (ISO-8601, must end in Z)
   "priority": "high",              // optional, "high" (default) | "low"; "low" for marketing/bulk
   "trackClicks": false,            // optional, email only (default false); rewrite body links for click tracking
   "campaignId": "spring-sale"      // optional; groups click stats across sends (read via GET /clicks)
 }
 ```
-**Content source — exactly one of `templateId` or `content`.** Inline `content` uses the same
-per-kind shape as a template's `content` (e.g. email_html `{ subject, bodyHtml, bodyText }`) and
-is **raw only** — designed/Maily content is dashboard-only, same as `POST /templates`. Its
-`{{vars}}` must all be covered by `params`. `logTitle` / `logDescription` are accepted **only**
-with inline `content` (template sends carry these on the template version); they default to empty
-strings. Inline sends are not linked to a template (their feed/log rows have a null `templateId`).
+**Content source — exactly one of `templateId` or `content`, per delivery.** Inline `content`
+uses the same per-kind shape as a template's `content` (e.g. email_html
+`{ subject, bodyHtml, bodyText }`) and is **raw only** — designed/Maily content is dashboard-only,
+same as `POST /templates`. Its `{{vars}}` must all be covered by `params`. `logTitle` /
+`logDescription` are accepted **only** with inline `content` (template sends carry these on the
+template version); they default to empty strings. Inline sends are not linked to a template
+(their feed/log rows have a null `templateId`).
 
-`targets` holds 1–1000 entries and renders the body **once** for all of them (only `recipient` +
-`externalUserId` vary per target) — so it can't personalize per recipient; for `Hello {{name}}`
-send one `/send` per recipient instead. Returns **202** `{ sendId }` (one `sendId` even for
-fan-out; poll `GET /sends/:id` for status). Header `Idempotency-Key: <uuid>` (recommended) —
-result is cached **24h**; replaying with the *same* body returns the original result, a
-*different* body → **409**.
+**Delivery — exactly one of three modes:**
+- **Single** — top-level `channelConfigId` + `recipient`.
+- **Fan-out** — `targets` (1–1000 entries), each `{ recipient, externalUserId? }`. Renders the
+  body **once** and reuses it for every target (only `recipient` + `externalUserId` vary per
+  target) — so it can't personalize per recipient; for `Hello {{name}}` send one `/send` per
+  recipient instead.
+- **Multi-channel** — `deliveries` (1–10 entries), each with its own `channelConfigId`,
+  content source (`templateId` XOR `content`), `recipient`, and optional per-delivery `params`
+  (falls back to the top-level `params`). The same logical notification over several channels
+  for **one** recipient, identified by the top-level `externalUserId`. All deliveries share one
+  `sendId`; not cross-producted with `targets[]` (loop over recipients yourself for bulk
+  multi-channel).
+
+**Feed-only sends** omit `recipient`/`targets`/`deliveries` entirely — just `feed` (its `title`
+becomes required) + `externalUserId`. Zero dispatches, one feed entry, `send.completed` fires
+immediately.
+
+Returns **202** `{ sendId }` (one `sendId` even for fan-out/multi-channel; poll `GET /sends/:id`
+for status). Header `Idempotency-Key: <uuid>` (recommended) — result is cached **24h**; replaying
+with the *same* body returns the original result, a *different* body → **409**.
 
 `priority` (`"high"` default, `"low"`) sets dispatch order on the shared queue — `low` marketing
 bulk yields to `high` transactional mail so a campaign can't delay a magic-link email. It changes
@@ -159,9 +178,16 @@ per-kind shapes above). POST returns **201** `{ id, requiredParams }`; the respo
   functions; an unbalanced section is rejected with 400 at create/publish; visual/"designed"
   (Maily) templates stay flat-vars only.
 - **Names** are unique per workspace; re-creating errors → GET then PATCH for idempotent imports.
-- **`GET /notifications`** is the end-user feed, not an admin log: `externalUserId` is required and
-  only `show_in_feed=true`, non-test rows show. Cursor-paginated (`cursor`, `limit` ≤200,
-  `after`/`before`); filter by `status` (default `delivered`), `templateId`, `channelConfigId`.
+- **`GET /notifications`** is the end-user feed, not an admin log: `externalUserId` is required.
+  It reads dedicated feed entries (one per `(send, externalUserId)`, created via `feed`/
+  `showInFeed`), **decoupled from delivery** — an entry stays visible even if every channel in
+  the send failed or was suppressed; test sends never create one. `status` in the response is
+  always `"delivered"` and `providerMessageId`/`dispatchedAt` are always `null` (kept for
+  compatibility with the older delivery-backed feed) — use `GET /sends/:id` for real delivery
+  diagnostics. Cursor-paginated (`cursor`, `limit` ≤200, `after`/`before`); filter by `status`
+  (kept for compatibility — any non-`delivered` value returns an empty page), `templateId`,
+  `channelConfigId` (a multi-channel entry carries its *first* delivery's ids; both `null` for
+  feed-only sends).
 - **Errors**: JSON `{ "error": "<code>", "message": "<detail>" }` (`error` is always present).
   Status codes: **400** validation / bad body, **401** missing or invalid key, **404** not found,
   **409** idempotency conflict (same `Idempotency-Key`, *different* body), **429** rate limited.
